@@ -12,6 +12,7 @@ from flags.sources import (
     Flag,
     SettingsFlagsSource,
     get_flags,
+    get_flag,
 )
 
 
@@ -25,6 +26,9 @@ class TestFlagsSource(object):
             ]
         }
 
+    def get_flag(self, flag_name):
+        return [Condition('boolean', True), ]
+
 
 class SettingsFlagsSourceTestCase(TestCase):
 
@@ -36,6 +40,12 @@ class SettingsFlagsSourceTestCase(TestCase):
             flags,
             {'MY_FLAG': [Condition('boolean', True), ]}
         )
+
+    @override_settings(FLAGS={'MY_FLAG': {'boolean': True}})
+    def test_get_flag(self):
+        source = SettingsFlagsSource()
+        conditions = source.get_flag('MY_FLAG')
+        self.assertEqual(conditions, [Condition('boolean', True), ])
 
 
 class DatabaseFlagsSourceTestCase(TestCase):
@@ -49,6 +59,16 @@ class DatabaseFlagsSourceTestCase(TestCase):
         source = DatabaseFlagsSource()
         flags = source.get_flags()
         self.assertEqual(flags, {'MY_FLAG': [Condition('boolean', 'False'), ]})
+
+    def test_get_flag(self):
+        FlagState.objects.create(
+            name='MY_FLAG',
+            condition='boolean',
+            value='False'
+        )
+        source = DatabaseFlagsSource()
+        conditions = source.get_flag('MY_FLAG')
+        self.assertEqual(conditions, [Condition('boolean', 'False'), ])
 
 
 class FlagTestCase(TestCase):
@@ -92,15 +112,29 @@ class GetFlagsTestCase(TestCase):
         with self.assertRaises(ImportError):
             get_flags(sources=['non.existent.module'])
 
-    @override_settings(FLAGS={'SOURCED_FLAG': {}, 'OTHER_FLAG': {}})
-    def test_get_flags(self):
-        flags = get_flags(
-            sources=[
-                'flags.sources.SettingsFlagsSource',
-                'flags.tests.test_sources.TestFlagsSource',
-            ]
+    @override_settings(
+        FLAGS={'SOURCED_FLAG': {}, 'OTHER_FLAG': {}},
+        FLAG_SOURCES=(
+            'flags.sources.SettingsFlagsSource',
+            'flags.tests.test_sources.TestFlagsSource',
         )
+    )
+    def test_get_flags(self):
+        flags = get_flags()
+        print(flags)
         self.assertIn('OTHER_FLAG', flags)
         self.assertIn('SOURCED_FLAG', flags)
         self.assertEqual(len(flags['OTHER_FLAG'].conditions), 0)
         self.assertEqual(len(flags['SOURCED_FLAG'].conditions), 1)
+
+    @override_settings(
+        FLAG_SOURCES=(
+            'flags.sources.SettingsFlagsSource',
+            'flags.tests.test_sources.TestFlagsSource',
+        )
+    )
+    def test_get_flag(self):
+        flag = get_flag('SOURCED_FLAG')
+        print(flag)
+        self.assertEqual(flag.name, 'SOURCED_FLAG')
+        self.assertEqual(flag.conditions, [Condition('boolean', True), ])
